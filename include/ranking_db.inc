@@ -25,7 +25,7 @@ public DB_LoadPlayerId(id)
 	new szAuthId[32];
 	get_user_authid(id, szAuthId, charsmax(szAuthId));
 
-	formatex(szQuery, charsmax(szQuery), "SELECT id FROM Users WHERE AuthId='%s';", szAuthId);
+	formatex(szQuery, charsmax(szQuery), "SELECT uuid FROM users WHERE auth_id='%s';", szAuthId);
 
 	SQL_ThreadQuery(g_iSqlTuple, "QueryLoadIdHandler", szQuery, data, sizeof(data));
 }
@@ -35,7 +35,7 @@ public QueryLoadIdHandler(iFailState, Handle:iQuery, szError[], iErrorCode, iDat
 	check_and_log_query_error(iFailState, szError, iErrorCode)
 	if(SQL_NumResults(iQuery))
 	{
-		g_aData[id][iId] = SQL_ReadResult(iQuery, 0);
+		SQL_ReadResult(iQuery, 0, g_aData[id][szUUID], charsmax(g_aData[][szUUID]));
 		DB_LoadPlayer(id);
 		DB_UpdatePlayerMedals(id);
 	}
@@ -46,9 +46,9 @@ public DB_InsertPlayer(id)
 	new szQuery[256];
 
 	formatex(szQuery, charsmax(szQuery), "\
-	INSERT INTO Ranking (UserId, Score, Bronze, Silver, Gold) \
-	VALUES (%d, %d, %d, %d, %d);",
-		g_aData[id][iId], g_aData[id][iScore], g_aData[id][iBronze], g_aData[id][iSilver], g_aData[id][iGold]);
+	INSERT INTO ranking (user_uuid, score, bronze, silver, gold) \
+	VALUES ('%s', %d, %d, %d, %d);",
+		g_aData[id][szUUID], g_aData[id][iScore], g_aData[id][iBronze], g_aData[id][iSilver], g_aData[id][iGold]);
 
 	SQL_ThreadQuery(g_iSqlTuple, "QueryHandler", szQuery)
 }
@@ -60,12 +60,12 @@ public DB_LoadPlayer(id)
 	data[0] = id;
 
 	formatex(szQuery, charsmax(szQuery), "\
-	SELECT Rank, Score, Bronze, Silver, Gold \
+	SELECT rank, score, bronze, silver, gold \
 		FROM ( \
-		    SELECT UserId, Score, Bronze, Silver, Gold, RANK() OVER (ORDER BY Score DESC) AS Rank \
-		    FROM Ranking \
+		    SELECT user_uuid, score, bronze, silver, gold, RANK() OVER (ORDER BY Score DESC) AS rank \
+		    FROM ranking \
 		) AS RankedUsers \
-		WHERE UserId = %d;", g_aData[id][iId]);
+		WHERE user_uuid = '%s';", g_aData[id][szUUID]);
 
 	SQL_ThreadQuery(g_iSqlTuple, "QueryLoadPlayerHandler", szQuery, data, sizeof(data));
 }
@@ -92,10 +92,10 @@ public DB_UpdatePlayer(id)
 	new szQuery[256];
 
 	formatex(szQuery, charsmax(szQuery), "\
-	UPDATE Ranking \
-	SET Score = %d, Bronze = %d, Silver = %d, Gold = %d \
-	WHERE UserId = %d;",
-		g_aData[id][iScore], g_aData[id][iBronze], g_aData[id][iSilver], g_aData[id][iGold], g_aData[id][iId]);
+	UPDATE ranking \
+	SET score = %d, bronze = %d, silver = %d, gold = %d \
+	WHERE user_uuid = '%s';",
+		g_aData[id][iScore], g_aData[id][iBronze], g_aData[id][iSilver], g_aData[id][iGold], g_aData[id][szUUID]);
 
 	SQL_ThreadQuery(g_iSqlTuple, "QueryHandler", szQuery)
 }
@@ -110,10 +110,10 @@ public DB_UpdatePlayerMedals(id)
 	get_mapname(szMapName, charsmax(szMapName));
 
 	formatex(szQuery, charsmax(szQuery), "\
-	INSERT INTO Player_Medals (UserId, MapId, Bronze, Silver, Gold) \
-		VALUES (%d, (SELECT id FROM Maps m WHERE m.Name = '%s'), %d, %d, %d) \
-  		ON DUPLICATE KEY UPDATE Bronze = %d, Silver = %d, Gold = %d;",
-		g_aData[id][iId], szMapName, iMedals[0], iMedals[1], iMedals[2], iMedals[0], iMedals[1], iMedals[2]);
+	INSERT INTO player_medals (user_uuid, map_uuid, bronze, silver, gold) \
+		VALUES ('%s', (SELECT uuid FROM maps m WHERE m.name = '%s'), %d, %d, %d) \
+  		ON DUPLICATE KEY UPDATE bronze = %d, silver = %d, gold = %d;",
+		g_aData[id][szUUID], szMapName, iMedals[0], iMedals[1], iMedals[2], iMedals[0], iMedals[1], iMedals[2]);
 
 
 	SQL_ThreadQuery(g_iSqlTuple, "QueryHandler", szQuery)

@@ -3,14 +3,16 @@
 #include <nvault>
 #include <timer>
 #include <credits>
+
+#define USE_RANKING 0
+
+#if USE_RANKING
 #include <ranking>
+#endif
 
-#define DEBUG 0
+#define DEBUG 1
 
-// if you increase the number of categories for the medals you should increase this number as well ( 3 )
-#define MEDALS_CATEGORIES 3
-
-#define MAX_CATEGORIES 32
+#define MAX_CATEGORIES 34
 #define TASK_ID 4832
 
 new bronze[3] = {205, 127, 50};
@@ -44,8 +46,7 @@ new g_iVault;
 new g_iHudSync;
 new bool:g_bShowHud[MAX_PLAYERS];
 
-new g_szMedalsText[MEDALS_CATEGORIES][64];
-new g_iMedalCatIndex[MAX_CATEGORIES];
+new Trie:g_tMedalsText;
 
 public plugin_init()
 {
@@ -79,12 +80,12 @@ public get_user_map_medals_native(numParams)
 {
 	new id = get_param(1);
 	new length = get_param(3);
-	new medals[3];
+	new bool:medals[3];
 	for(new i=0;i<MAX_CATEGORIES;i++)
 	{
-		medals[0] += g_bMedalsCompleted[id][i][0];
-		medals[1] += g_bMedalsCompleted[id][i][1];
-		medals[2] += g_bMedalsCompleted[id][i][2];
+		medals[0] += g_bMedalsCompleted[id][i][bMedalBronze];
+		medals[1] += g_bMedalsCompleted[id][i][bMedalSilver];
+		medals[2] += g_bMedalsCompleted[id][i][bMedalGold];
 	}
 
 	set_array(2, medals, length);
@@ -107,6 +108,8 @@ public plugin_cfg()
 {
 	g_aMedals = ArrayCreate(eMedalInfo);
 
+	g_tMedalsText = TrieCreate();
+
 	g_bMedalsEnabled = false;
 
 	get_mapname(g_szMapName, charsmax(g_szMapName));
@@ -125,6 +128,7 @@ public plugin_end()
 	nvault_close(g_iVault);
 
 	ArrayDestroy(g_aMedals);
+	TrieDestroy(g_tMedalsText);
 }
 
 public client_putinserver(id)
@@ -145,8 +149,8 @@ public LOAD_MEDALS()
 	if(!file_pointer) return;
 
 	new data[256], key[64], time[16], category[4], medal[4], reward[16], medal_name[8];
+	new temp_text[64];
 	new temp_medal[eMedalInfo];
-	new catIndex = -1;
 	new lastCat = -1;
 	
 	while(!feof(file_pointer)){
@@ -178,16 +182,17 @@ public LOAD_MEDALS()
 			server_print("Map %s Medal Category : %d | Type %d | Time : %f | Reward : %d", g_szMapName, temp_medal[iMedalCategory], temp_medal[iMedalType], temp_medal[fMedalTime], temp_medal[iMedalReward]);
 #endif		
 	
-			if(lastCat != temp_medal[iMedalCategory] && catIndex < MEDALS_CATEGORIES)
+			if(lastCat != temp_medal[iMedalCategory])
 			{
 				lastCat = temp_medal[iMedalCategory];
-				catIndex++;
-				g_iMedalCatIndex[lastCat] = catIndex;
+				formatex(temp_text, charsmax(temp_text), "");
 			}
 
 			format_time_float(time, charsmax(time), temp_medal[fMedalTime]);
 			get_medal_name(temp_medal[iMedalType], medal_name, charsmax(medal_name));
-			format(g_szMedalsText[catIndex], charsmax(g_szMedalsText[]), "%s%s - %s^n", g_szMedalsText[catIndex], medal_name, time);
+			format(temp_text, charsmax(temp_text), "%s%s - %s^n", temp_text, medal_name, time);
+
+			TrieSetString(g_tMedalsText, category, temp_text);
 		}
 	}
 }
@@ -196,6 +201,7 @@ public ShowMedalsTask()
 {
 	static players[MAX_PLAYERS], iNumPlayers, id, i;
 	static catName[8], cat;
+	static medals_text[64];
 	get_players(players, iNumPlayers, "ceh", "CT");
 	for(i=0;i<iNumPlayers;i++)
 	{
@@ -206,7 +212,9 @@ public ShowMedalsTask()
 		cat = get_user_category(id, catName, charsmax(catName));
 
 		set_hudmessage(0, 192, 0, 0.05, 0.15, 0, 0.0, 1.0, 0.0, 0.0, -1);
-		ShowSyncHudMsg(id, g_iHudSync, g_szMedalsText[g_iMedalCatIndex[cat]]);
+		num_to_str(cat, catName, charsmax(catName));
+		TrieGetString(g_tMedalsText, catName, medals_text, charsmax(medals_text));
+		ShowSyncHudMsg(id, g_iHudSync, medals_text);
 	}
 }
 
@@ -352,7 +360,9 @@ public check_time(id)
 			reward_player(id, temp_medal[iMedalType], temp_medal[iMedalReward]);
 
 			SaveMedal(id, temp_medal[iMedalCategory], temp_medal[iMedalType]);
+#if USE_RANKING
 			give_user_medals(id, temp_medal[iMedalType], 1);
+#endif
 		}
 	}
 }
@@ -384,7 +394,13 @@ public reward_player(id, medal_type, reward)
 	set_dhudmessage ( colors[0], colors[1], colors[2], -1.0, y, 0, 6.0, 12.0, 0.1, 0.2);
 	new medal_name[8];
 	get_medal_name(medal_type, medal_name, charsmax(medal_name));
-	show_dhudmessage(0, "%s got a %s MEDAL!", name, medal_name);
+	for(new i=1;i<MAX_PLAYERS;i++)
+	{
+		if(!g_bShowHud[id] || is_user_connected(id)) continue;
+		
+		show_dhudmessage(id, "%s got a %s MEDAL!", name, medal_name);
+	}
+	
 	set_user_credits(id, get_user_credits(id) + reward);
 }
 
@@ -422,9 +438,16 @@ public SaveMedal(id, category_id, medal_type)
 
 stock format_time_float(output[], len, Float:time)
 {
-	new seconds = floatround(time);
-	formatex(output, len, "%02d:%02ds", (seconds % 3600) / 60, seconds % 60);
-} 
+    new minutes, seconds, centiseconds;
+
+    minutes = floatround(time / 60.0, floatround_floor);
+    seconds = floatround(time, floatround_floor) % 60;
+
+    centiseconds = floatround((time - floatround(time, floatround_floor)) * 100.0);
+
+    formatex(output, len, "%02d:%02d.%02d", minutes, seconds, centiseconds);
+}
+
 
 stock get_medal_name(id, buffer[], length)
 {

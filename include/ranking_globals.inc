@@ -16,7 +16,7 @@ enum eData
 	iGold,
 	iScore,
 	iRank,
-	iId
+	szUUID[37]
 };
 
 enum eRank
